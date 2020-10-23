@@ -2,28 +2,23 @@
 
 # Copyright (C) 2014 mooapp
 #
-# Licensed under the Apache License, Version 2.0 (the "License"). You may not 
-# use this file except in compliance with the License. A copy of the License 
+# Licensed under the Apache License, Version 2.0 (the "License"). You may not
+# use this file except in compliance with the License. A copy of the License
 # is located at
 #
 #        http://www.apache.org/licenses/LICENSE-2.0
 #
-# or in the "LICENSE" file accompanying this file. This file is distributed 
-# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either 
-# express or implied. See the License for the specific language governing 
+# or in the "LICENSE" file accompanying this file. This file is distributed
+# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+# express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 
 
 ########################################
 # Initial Settings
 ########################################
-SCRIPT_NAME=${0##*/} 
-SCRIPT_VERSION=1.1 
-
-instanceid=`wget -q -O - http://169.254.169.254/latest/meta-data/instance-id`
-azone=`wget -q -O - http://169.254.169.254/latest/meta-data/placement/availability-zone`
-region=${azone/%?/}
-export EC2_REGION=$region
+SCRIPT_NAME=${0##*/}
+SCRIPT_VERSION=1.1
 
 
 ########################################
@@ -37,15 +32,18 @@ GIGA=1073741824
 ########################################
 # Usage
 ########################################
-usage() 
-{ 
+usage()
+{
     echo "Usage: $SCRIPT_NAME [options] "
-    echo "Options:" 
+    echo "Options:"
     printf "    %-28s %s\n" "-h|--help" "Displays detailed usage information."
     printf "    %-28s %s\n" "--version" "Displays the version number."
     printf "    %-28s %s\n" "--verify" "Checks configuration and prepares a remote call."
     printf "    %-28s %s\n" "--verbose" "Displays details of what the script is doing."
     printf "    %-28s %s\n" "--debug" "Displays information for debugging."
+    printf "    %-28s %s\n" "--region" "AWS region for aws cloudwatch."
+    printf "    %-28s %s\n" "--namespace" "CloudWatch metric namespace. Defaults to System/Linux."
+    printf "    %-28s %s\n" "--instance-id" "EC2 instance ID to attach metric to."
     printf "    %-28s %s\n" "--from-cron" "Use this option when calling the script from cron."
     printf "    %-28s %s\n" "--profile VALUE" "Use a specific profile from your credential file."
     printf "    %-28s %s\n" "--load-ave1" "Reports load average for 1 minute in counts."
@@ -79,13 +77,16 @@ usage()
 # Options
 ########################################
 SHORT_OPTS="h"
-LONG_OPTS="help,version,verify,verbose,debug,from-cron,profile:,load-ave1,load-ave5,load-ave15,interrupt,context-switch,cpu-us,cpu-sy,cpu-id,cpu-wa,cpu-st,memory-units:,mem-used-incl-cache-buff,mem-util,mem-used,mem-avail,swap-util,swap-used,swap-avail,disk-path:,disk-space-units:,disk-space-util,disk-space-used,disk-space-avail,all-items" 
+LONG_OPTS="help,version,verify,verbose,debug,region:,namespace:,instance-id:,from-cron,profile:,load-ave1,load-ave5,load-ave15,interrupt,context-switch,cpu-us,cpu-sy,cpu-id,cpu-wa,cpu-st,memory-units:,mem-used-incl-cache-buff,mem-util,mem-used,mem-avail,swap-util,swap-used,swap-avail,disk-path:,disk-space-units:,disk-space-util,disk-space-used,disk-space-avail,all-items"
 
-ARGS=$(getopt -s bash --options $SHORT_OPTS --longoptions $LONG_OPTS --name $SCRIPT_NAME -- "$@" ) 
+ARGS=$(getopt -s bash --options $SHORT_OPTS --longoptions $LONG_OPTS --name $SCRIPT_NAME -- "$@" )
 
 VERIFY=0
 VERBOSE=0
 DEBUG=0
+REGION=""
+NAMESPACE="System/Linux"
+INSTANCE_ID=""
 FROM_CRON=0
 PROFILE=""
 LOAD_AVE1=0
@@ -114,25 +115,37 @@ DISK_SPACE_UTIL=0
 DISK_SPACE_USED=0
 DISK_SPACE_AVAIL=0
 
-eval set -- "$ARGS" 
-while true; do 
-    case $1 in 
+eval set -- "$ARGS"
+while true; do
+    case $1 in
         # General
-        -h|--help) 
-            usage 
-            exit 0 
-            ;; 
-        --version) 
-            echo "$SCRIPT_VERSION" 
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --version)
+            echo "$SCRIPT_VERSION"
             ;;
         --verify)
-            VERIFY=1  
-            ;; 
+            VERIFY=1
+            ;;
         --verbose)
-            VERBOSE=1   
+            VERBOSE=1
             ;;
         --debug)
             DEBUG=1
+            ;;
+        --region)
+            shift
+            REGION=$1
+            ;;
+        --namespace)
+            shift
+            NAMESPACE=$1
+            ;;
+        --instance-id)
+            shift
+            INSTANCE_ID=$1
             ;;
         --from-cron)
             FROM_CRON=1
@@ -183,26 +196,26 @@ while true; do
             MEM_USED_INCL_CACHE_BUFF=1
             ;;
         --mem-util)
-            MEM_UTIL=1  
+            MEM_UTIL=1
             ;;
-        --mem-used) 
-            MEM_USED=1 
+        --mem-used)
+            MEM_USED=1
             ;;
-        --mem-avail) 
-            MEM_AVAIL=1 
+        --mem-avail)
+            MEM_AVAIL=1
             ;;
-        --swap-util) 
-            SWAP_UTIL=1 
+        --swap-util)
+            SWAP_UTIL=1
             ;;
-        --swap-used) 
-            SWAP_USED=1 
+        --swap-used)
+            SWAP_USED=1
             ;;
         --swap-avail)
             SWAP_AVAIL=1
             ;;
         # Disk
-        --disk-path) 
-            shift 
+        --disk-path)
+            shift
             DISK_PATH=$1
             ;;
         --disk-space-units)
@@ -239,16 +252,16 @@ while true; do
             DISK_SPACE_USED=1
             DISK_SPACE_AVAIL=1
             ;;
-        --) 
+        --)
             shift
-            break 
-            ;; 
-        *) 
+            break
+            ;;
+        *)
             shift
-            break 
-            ;; 
-    esac 
-    shift 
+            break
+            ;;
+    esac
+    shift
 done
 
 
@@ -317,9 +330,15 @@ if [ $FROM_CRON -eq 1 ]; then
 fi
 
 # CloudWatch Command Line Interface Option
-CLOUDWATCH_OPTS="--namespace System/Detail/Linux --dimensions InstanceId=$instanceid"
+CLOUDWATCH_OPTS="$CLOUDWATCH_OPTS --namespace $NAMESPACE"
 if [ -n "$PROFILE" ]; then
     CLOUDWATCH_OPTS="$CLOUDWATCH_OPTS --profile $PROFILE"
+fi
+if [ -n "$INSTANCE_ID" ]; then
+    CLOUDWATCH_OPTS="$CLOUDWATCH_OPTS --dimensions InstanceId=$INSTANCE_ID"
+fi
+if [ -n "$REGION" ]; then
+    CLOUDWATCH_OPTS="$CLOUDWATCH_OPTS --region $REGION"
 fi
 
 # Command Output
@@ -341,7 +360,7 @@ if [ $LOAD_AVE1 -eq 1 ]; then
         echo "loadave1:$loadave1"
     fi
     if [ $VERIFY -eq 0 ]; then
-        aws cloudwatch put-metric-data --metric-name "LoadAverage1Min" --value "$loadave1" --unit "Count" $CLOUDWATCH_OPTS 
+        aws cloudwatch put-metric-data --metric-name "LoadAverage1Min" --value "$loadave1" --unit "Count" $CLOUDWATCH_OPTS
     fi
 fi
 
@@ -495,7 +514,7 @@ if [ $MEM_AVAIL -eq 1 ]; then
     if [ $VERBOSE -eq 1 ]; then
         echo "mem_avail:$mem_avail"
     fi
-    if [ $VERIFY -eq 0 ]; then        
+    if [ $VERIFY -eq 0 ]; then
         aws cloudwatch put-metric-data --metric-name "MemoryAvailable" --value "$mem_avail" --unit "$MEM_UNITS" $CLOUDWATCH_OPTS
     fi
 fi
@@ -573,4 +592,3 @@ if [ $DISK_SPACE_AVAIL -eq 1 -a -n "$DISK_PATH" ]; then
         aws cloudwatch put-metric-data --metric-name "DiskSpaceAvailable" --value "$disk_avail" --unit "$DISK_SPACE_UNITS" $CLOUDWATCH_OPTS
     fi
 fi
-
