@@ -60,6 +60,7 @@ usage()
     printf "    %-28s %s\n" "--mem-used-incl-cache-buff" "Count memory that is cached and in buffers as used."
     printf "    %-28s %s\n" "--mem-util" "Reports memory utilization in percentages."
     printf "    %-28s %s\n" "--mem-used" "Reports memory used in megabytes."
+    printf "    %-28s %s\n" "--mem-active" "Reports active memory in megabytes."
     printf "    %-28s %s\n" "--mem-avail" "Reports available memory in megabytes."
     printf "    %-28s %s\n" "--swap-util" "Reports swap utilization in percentages."
     printf "    %-28s %s\n" "--swap-used" "Reports allocated swap space in megabytes."
@@ -77,7 +78,7 @@ usage()
 # Options
 ########################################
 SHORT_OPTS="h"
-LONG_OPTS="help,version,verify,verbose,debug,region:,namespace:,instance-id:,from-cron,profile:,load-ave1,load-ave5,load-ave15,interrupt,context-switch,cpu-us,cpu-sy,cpu-id,cpu-wa,cpu-st,memory-units:,mem-used-incl-cache-buff,mem-util,mem-used,mem-avail,swap-util,swap-used,swap-avail,disk-path:,disk-space-units:,disk-space-util,disk-space-used,disk-space-avail,all-items"
+LONG_OPTS="help,version,verify,verbose,debug,region:,namespace:,instance-id:,from-cron,profile:,load-ave1,load-ave5,load-ave15,interrupt,context-switch,cpu-us,cpu-sy,cpu-id,cpu-wa,cpu-st,memory-units:,mem-used-incl-cache-buff,mem-util,mem-used,mem-active,mem-avail,swap-util,swap-used,swap-avail,disk-path:,disk-space-units:,disk-space-util,disk-space-used,disk-space-avail,all-items"
 
 ARGS=$(getopt -s bash --options $SHORT_OPTS --longoptions $LONG_OPTS --name $SCRIPT_NAME -- "$@" )
 
@@ -104,6 +105,7 @@ MEM_UNIT_DIV=1
 MEM_USED_INCL_CACHE_BUFF=0
 MEM_UTIL=0
 MEM_USED=0
+MEM_ACTIVE=0
 MEM_AVAIL=0
 SWAP_UTIL=0
 SWAP_USED=0
@@ -200,6 +202,9 @@ while true; do
             ;;
         --mem-used)
             MEM_USED=1
+            ;;
+        --mem-active)
+            MEM_ACTIVE=1
             ;;
         --mem-avail)
             MEM_AVAIL=1
@@ -468,10 +473,10 @@ mem_cached=`getMemInfo "Cached"`
 mem_cached=`expr $mem_cached \* $KILO`
 mem_buffers=`getMemInfo "Buffers"`
 mem_buffers=`expr $mem_buffers \* $KILO`
-mem_avail=$mem_free
-if [ $MEM_USED_INCL_CACHE_BUFF -eq 1 ]; then
-    mem_avail=`expr $mem_avail + $mem_cached + $mem_buffers`
-fi
+mem_active=`getMemInfo "Active"`
+mem_active=`expr $mem_active \* $KILO`
+mem_avail=`getMemInfo "MemAvailable" \* $KILO`
+mem_avail=`expr $mem_avail \* $KILO`
 mem_used=`expr $mem_total - $mem_avail`
 swap_total=`getMemInfo "SwapTotal"`
 swap_total=`expr $swap_total \* $KILO`
@@ -485,6 +490,8 @@ if [ $DEBUG -eq 1 ]; then
     echo "MemFree:$mem_free"
     echo "Cached:$mem_cached"
     echo "Buffers:$mem_buffers"
+    echo "MemAvailable:$mem_avail"
+    echo "Active:$mem_active"
     echo "SwapTotal:$swap_total"
     echo "SwapFree:$swap_free"
 fi
@@ -506,6 +513,16 @@ if [ $MEM_USED -eq 1 ]; then
     fi
     if [ $VERIFY -eq 0 ]; then
         aws cloudwatch put-metric-data --metric-name "MemoryUsed" --value "$mem_used" --unit "$MEM_UNITS" $CLOUDWATCH_OPTS
+    fi
+fi
+
+if [ $MEM_ACTIVE -eq 1 ]; then
+    mem_active=`expr $mem_active / $MEM_UNIT_DIV`
+    if [ $VERBOSE -eq 1 ]; then
+        echo "mem_active:$mem_active"
+    fi
+    if [ $VERIFY -eq 0 ]; then
+        aws cloudwatch put-metric-data --metric-name "MemoryActive" --value "$mem_active" --unit "$MEM_UNITS" $CLOUDWATCH_OPTS
     fi
 fi
 
